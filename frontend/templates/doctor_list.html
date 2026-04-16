@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Find Doctors – MediBook</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Find a Doctor</h1>
+      <p>Browse our verified specialists and book your appointment instantly.</p>
+    </div>
+
+    <!-- Search + Filter -->
+    <div class="search-bar">
+      <div class="search-input-wrapper" style="flex:1">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" class="form-control" placeholder="Search by name or specialization...">
+      </div>
+      <select id="specFilter" class="form-control" style="max-width:220px">
+        <option value="">All Specializations</option>
+      </select>
+    </div>
+
+    <div id="alertBox"></div>
+    <div id="doctorsGrid" class="doctors-grid">
+      <div style="grid-column:1/-1" class="loading-overlay"><span class="spinner dark"></span> Loading doctors...</div>
+    </div>
+  </div>
+
+  <!-- Booking Modal -->
+  <div class="modal-overlay" id="bookingModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Book Appointment</h2>
+        <button class="modal-close" onclick="UI.closeModal('bookingModal')">✕</button>
+      </div>
+
+      <div id="doctorSummary" style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--gray-100);border-radius:8px;margin-bottom:1.25rem;">
+      </div>
+
+      <div id="modalAlert"></div>
+
+      <form id="bookingForm">
+        <input type="hidden" id="selectedDoctorId">
+
+        <div class="form-group">
+          <label>Appointment Date</label>
+          <input type="date" id="appointmentDate" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+          <label>Select Time Slot</label>
+          <div class="time-slots" id="timeSlots"></div>
+          <input type="hidden" id="selectedTime" required>
+        </div>
+
+        <div class="form-group">
+          <label>Reason for Visit <span style="color:var(--gray-500)">(optional)</span></label>
+          <textarea id="reason" class="form-control" placeholder="Briefly describe your symptoms or reason..."></textarea>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button type="button" class="btn btn-outline" style="flex:1" onclick="UI.closeModal('bookingModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="flex:1" id="bookBtn">Confirm Booking</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    Auth.requireAuth('/login.html');
+
+    const role = Auth.getRole();
+    let allDoctors = [];
+
+    // Set minimum date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('appointmentDate').min = today;
+    document.getElementById('appointmentDate').value = today;
+
+    // Generate time slots 9AM - 5PM, every 30 min
+    function generateTimeSlots(startTime = '09:00', endTime = '17:00') {
+      const slots = [];
+      const [sh, sm] = startTime.split(':').map(Number);
+      const [eh, em] = endTime.split(':').map(Number);
+      let h = sh, m = sm;
+      while (h < eh || (h === eh && m < em)) {
+        slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+        m += 30;
+        if (m >= 60) { h++; m = 0; }
+      }
+      return slots;
+    }
+
+    function renderTimeSlots(doctor) {
+      const container = document.getElementById('timeSlots');
+      const slots = generateTimeSlots(doctor.available_start_time, doctor.available_end_time);
+      container.innerHTML = slots.map(t => `
+        <div class="time-slot" data-time="${t}" onclick="selectTime(this)">
+          ${UI.formatTime(t)}
+        </div>`).join('');
+    }
+
+    function selectTime(el) {
+      document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('selectedTime').value = el.dataset.time;
+    }
+
+    async function loadDoctors() {
+      try {
+        allDoctors = await API.get('/doctors/');
+        renderDoctors(allDoctors);
+
+        // Load specializations for filter
+        const specs = [...new Set(allDoctors.map(d => d.specialization))].sort();
+        const filter = document.getElementById('specFilter');
+        specs.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s;
+          opt.textContent = s;
+          filter.appendChild(opt);
+        });
+      } catch (err) {
+        document.getElementById('doctorsGrid').innerHTML =
+          `<div class="loading-overlay">Failed to load doctors. ${err.message}</div>`;
+      }
+    }
+
+    function renderDoctors(doctors) {
+      const grid = document.getElementById('doctorsGrid');
+      if (doctors.length === 0) {
+        grid.innerHTML = `<div style="grid-column:1/-1">
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <h3>No doctors found</h3>
+            <p>Try adjusting your search or filter.</p>
+          </div>
+        </div>`;
+        return;
+      }
+
+      grid.innerHTML = doctors.map(d => `
+        <div class="doctor-card" onclick="openBooking(${d.id})">
+          <div class="doctor-avatar">${d.user.full_name.charAt(0)}</div>
+          <div class="doctor-name">${d.user.full_name}</div>
+          <div class="doctor-spec">${d.specialization}</div>
+          <div class="doctor-meta">
+            <span>🎓 ${d.experience_years}y exp</span>
+            <span>📋 ${d.qualification || 'MBBS'}</span>
+          </div>
+          ${d.bio ? `<p style="font-size:0.85rem;color:var(--gray-500);margin-bottom:0.75rem;line-clamp:2;">${d.bio.substring(0,90)}...</p>` : ''}
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div class="doctor-fee">₹${d.consultation_fee} <span>/ consult</span></div>
+            ${role === 'patient' ? '<button class="btn btn-primary btn-sm">Book Now →</button>' : ''}
+          </div>
+        </div>`).join('');
+    }
+
+    function openBooking(doctorId) {
+      if (role !== 'patient') return;
+      const doctor = allDoctors.find(d => d.id === doctorId);
+      if (!doctor) return;
+
+      document.getElementById('selectedDoctorId').value = doctorId;
+      document.getElementById('doctorSummary').innerHTML = `
+        <div style="width:42px;height:42px;background:var(--primary-xlight);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;color:var(--primary);flex-shrink:0">
+          ${doctor.user.full_name.charAt(0)}
+        </div>
+        <div>
+          <div style="font-weight:600">${doctor.user.full_name}</div>
+          <div style="font-size:0.82rem;color:var(--primary)">${doctor.specialization} · ₹${doctor.consultation_fee}</div>
+        </div>`;
+
+      renderTimeSlots(doctor);
+      document.getElementById('selectedTime').value = '';
+      document.getElementById('modalAlert').innerHTML = '';
+      document.getElementById('reason').value = '';
+      UI.openModal('bookingModal');
+    }
+
+    // Filter doctors on search/select
+    function filterDoctors() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const spec = document.getElementById('specFilter').value;
+      const filtered = allDoctors.filter(d => {
+        const matchSearch = !query ||
+          d.user.full_name.toLowerCase().includes(query) ||
+          d.specialization.toLowerCase().includes(query);
+        const matchSpec = !spec || d.specialization === spec;
+        return matchSearch && matchSpec;
+      });
+      renderDoctors(filtered);
+    }
+
+    document.getElementById('searchInput').addEventListener('input', filterDoctors);
+    document.getElementById('specFilter').addEventListener('change', filterDoctors);
+
+    // Booking form submit
+    document.getElementById('bookingForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('bookBtn');
+      const alertEl = document.getElementById('modalAlert');
+
+      const time = document.getElementById('selectedTime').value;
+      if (!time) {
+        UI.showAlert(alertEl, 'Please select a time slot', 'warning');
+        return;
+      }
+
+      UI.setLoading(btn, true);
+      try {
+        await API.post('/appointments/', {
+          doctor_id: parseInt(document.getElementById('selectedDoctorId').value),
+          appointment_date: document.getElementById('appointmentDate').value,
+          appointment_time: time,
+          reason: document.getElementById('reason').value.trim() || null,
+        });
+
+        UI.closeModal('bookingModal');
+        UI.showAlert(document.getElementById('alertBox'), '✓ Appointment booked successfully!', 'success');
+        setTimeout(() => window.location.href = '/appointments.html', 1500);
+      } catch (err) {
+        UI.showAlert(alertEl, err.message, 'error');
+        UI.setLoading(btn, false);
+      }
+    });
+
+    // Close modal on overlay click
+    document.getElementById('bookingModal').addEventListener('click', (e) => {
+      if (e.target.id === 'bookingModal') UI.closeModal('bookingModal');
+    });
+
+    loadDoctors();
+  </script>
+</body>
+</html>

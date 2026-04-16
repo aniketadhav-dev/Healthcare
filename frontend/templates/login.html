@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login – MediBook</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-container">
+      <!-- Left branding panel -->
+      <div class="auth-left">
+        <div class="brand">
+          <div class="brand-icon">✚</div>
+          <span class="brand-name">MediBook</span>
+        </div>
+        <h1>Your health,<br><em>beautifully managed.</em></h1>
+        <p>Book appointments with top specialists, track your health journey, and stay connected with your care team.</p>
+        <div class="auth-features">
+          <div class="auth-feature">
+            <div class="icon">👨‍⚕️</div>
+            <span>Verified doctors across specializations</span>
+          </div>
+          <div class="auth-feature">
+            <div class="icon">📅</div>
+            <span>Easy online appointment booking</span>
+          </div>
+          <div class="auth-feature">
+            <div class="icon">🔒</div>
+            <span>Secure and private health records</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right login form -->
+      <div class="auth-right">
+        <h2>Welcome back</h2>
+        <p class="auth-subtitle">Sign in to your MediBook account</p>
+
+        <div id="alert-box"></div>
+
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="email">Email address</label>
+            <input type="email" id="email" class="form-control" placeholder="you@example.com" required>
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" class="form-control" placeholder="Enter your password" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%; margin-top:8px" id="loginBtn">
+            Sign In
+          </button>
+        </form>
+
+        <div class="auth-footer">
+          Don't have an account? <a href="/register.html">Create one →</a>
+        </div>
+
+        <!-- Demo credentials hint -->
+        <div style="margin-top:1.5rem; padding:1rem; background:var(--gray-100); border-radius:8px; font-size:0.82rem; color:var(--gray-500);">
+          <strong style="color:var(--gray-700);">Demo accounts:</strong><br>
+          Patient: rahul@example.com / patient123<br>
+          Doctor: priya.sharma@healthcare.com / doctor123<br>
+          Admin: admin@healthcare.com / admin123
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    // Redirect if already logged in
+    if (Auth.isLoggedIn()) window.location.href = '/dashboard.html';
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      const alertBox = document.getElementById('alert-box');
+      UI.setLoading(btn, true);
+
+      try {
+        const data = await API.post('/auth/login', {
+          email: document.getElementById('email').value.trim(),
+          password: document.getElementById('password').value,
+        }, false);
+
+        Auth.setSession(data);
+        UI.showAlert(alertBox, 'Login successful! Redirecting...', 'success');
+        setTimeout(() => window.location.href = '/dashboard.html', 800);
+      } catch (err) {
+        UI.showAlert(alertBox, err.message, 'error');
+        UI.setLoading(btn, false);
+      }
+    });
+  </script>
+</body>
+</html>

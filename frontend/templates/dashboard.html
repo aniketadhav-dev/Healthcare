@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard – MediBook</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1 id="greeting">Dashboard</h1>
+      <p id="subtitle">Welcome back! Here's an overview of your health activity.</p>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card">
+        <div class="stat-label">Loading...</div>
+        <div class="stat-value primary"><span class="spinner dark"></span></div>
+      </div>
+    </div>
+
+    <!-- Recent Appointments -->
+    <div class="card">
+      <div class="section-header">
+        <h2>Recent Appointments</h2>
+        <a href="/appointments.html" class="btn btn-outline btn-sm">View All →</a>
+      </div>
+      <div id="recentAppointments">
+        <div class="loading-overlay"><span class="spinner dark"></span> Loading...</div>
+      </div>
+    </div>
+
+    <!-- Patient: Quick Actions -->
+    <div id="patientActions" style="display:none; margin-top:1.5rem;">
+      <div class="section-header"><h2>Quick Actions</h2></div>
+      <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+        <a href="/doctor_list.html" class="btn btn-primary">🔍 Find a Doctor</a>
+        <a href="/appointments.html" class="btn btn-outline">📅 My Appointments</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    Auth.requireAuth('/login.html');
+
+    const user = Auth.getUser();
+    const role = Auth.getRole();
+
+    document.getElementById('greeting').textContent = `Hello, ${user.name.split(' ')[0]} 👋`;
+
+    async function loadDashboard() {
+      try {
+        const appointments = await API.get('/appointments/');
+        renderStats(appointments);
+        renderRecent(appointments);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function renderStats(appointments) {
+      const total = appointments.length;
+      const upcoming = appointments.filter(a => a.status === 'pending' || a.status === 'confirmed').length;
+      const completed = appointments.filter(a => a.status === 'completed').length;
+      const cancelled = appointments.filter(a => a.status === 'cancelled').length;
+
+      let statsHtml = '';
+
+      if (role === 'patient') {
+        statsHtml = `
+          <div class="stat-card"><div class="stat-label">Total Booked</div><div class="stat-value primary">${total}</div></div>
+          <div class="stat-card"><div class="stat-label">Upcoming</div><div class="stat-value warning">${upcoming}</div></div>
+          <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value success">${completed}</div></div>
+          <div class="stat-card"><div class="stat-label">Cancelled</div><div class="stat-value">${cancelled}</div></div>`;
+        document.getElementById('patientActions').style.display = 'block';
+      } else if (role === 'doctor') {
+        const pending = appointments.filter(a => a.status === 'pending').length;
+        const confirmed = appointments.filter(a => a.status === 'confirmed').length;
+        statsHtml = `
+          <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value primary">${total}</div></div>
+          <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value warning">${pending}</div></div>
+          <div class="stat-card"><div class="stat-label">Confirmed</div><div class="stat-value primary">${confirmed}</div></div>
+          <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value success">${completed}</div></div>`;
+      } else {
+        statsHtml = `
+          <div class="stat-card"><div class="stat-label">All Appointments</div><div class="stat-value primary">${total}</div></div>
+          <div class="stat-card"><div class="stat-label">Active</div><div class="stat-value warning">${upcoming}</div></div>
+          <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value success">${completed}</div></div>
+          <div class="stat-card"><div class="stat-label">Cancelled</div><div class="stat-value">${cancelled}</div></div>`;
+      }
+
+      document.getElementById('statsGrid').innerHTML = statsHtml;
+    }
+
+    function renderRecent(appointments) {
+      const recent = appointments.slice(0, 5);
+      const container = document.getElementById('recentAppointments');
+
+      if (recent.length === 0) {
+        container.innerHTML = `<div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <h3>No appointments yet</h3>
+          <p>${role === 'patient' ? '<a href="/doctor_list.html">Find a doctor and book your first appointment →</a>' : 'No appointments assigned.'}</p>
+        </div>`;
+        return;
+      }
+
+      container.innerHTML = `<div class="appointments-list">${recent.map(a => {
+        const parts = UI.getDateParts(a.appointment_date);
+        const doctorName = a.doctor?.user?.full_name || 'Unknown';
+        const patientName = a.patient?.full_name || 'Unknown';
+        const spec = a.doctor?.specialization || '';
+        const displayName = role === 'patient' ? doctorName : patientName;
+        const subText = role === 'patient' ? spec : `Patient: ${patientName}`;
+
+        return `<div class="appointment-card">
+          <div class="appt-left">
+            <div class="appt-date-box">
+              <div class="day">${parts.day}</div>
+              <div class="month">${parts.month}</div>
+            </div>
+            <div class="appt-info">
+              <h3>${displayName}</h3>
+              <p>${subText} · ${UI.formatTime(a.appointment_time)}</p>
+              ${a.reason ? `<p style="font-size:0.82rem;color:var(--gray-500)">${a.reason}</p>` : ''}
+            </div>
+          </div>
+          <div class="appt-right">
+            ${UI.statusBadge(a.status)}
+          </div>
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>

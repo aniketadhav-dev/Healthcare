@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register – MediBook</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-container">
+      <!-- Left branding panel -->
+      <div class="auth-left">
+        <div class="brand">
+          <div class="brand-icon">✚</div>
+          <span class="brand-name">MediBook</span>
+        </div>
+        <h1>Join thousands of<br><em>patients & doctors.</em></h1>
+        <p>Create your free account and start booking appointments with verified healthcare professionals today.</p>
+        <div class="auth-features">
+          <div class="auth-feature">
+            <div class="icon">⚡</div>
+            <span>Quick 2-minute registration</span>
+          </div>
+          <div class="auth-feature">
+            <div class="icon">🏥</div>
+            <span>Access to all specializations</span>
+          </div>
+          <div class="auth-feature">
+            <div class="icon">📱</div>
+            <span>Manage appointments anywhere</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right register form -->
+      <div class="auth-right">
+        <h2>Create account</h2>
+        <p class="auth-subtitle">Register as a patient to book appointments</p>
+
+        <div id="alert-box"></div>
+
+        <form id="registerForm">
+          <div class="form-group">
+            <label for="full_name">Full Name</label>
+            <input type="text" id="full_name" class="form-control" placeholder="Your full name" required>
+          </div>
+          <div class="form-group">
+            <label for="email">Email address</label>
+            <input type="email" id="email" class="form-control" placeholder="you@example.com" required>
+          </div>
+          <div class="form-group">
+            <label for="phone">Phone Number</label>
+            <input type="tel" id="phone" class="form-control" placeholder="10-digit phone number">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" class="form-control" placeholder="Min. 6 characters" required minlength="6">
+          </div>
+          <div class="form-group">
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" class="form-control" placeholder="Re-enter password" required>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="width:100%; margin-top:8px" id="registerBtn">
+            Create Account
+          </button>
+        </form>
+
+        <div class="auth-footer">
+          Already have an account? <a href="/login.html">Sign in →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    // Redirect if already logged in
+    if (Auth.isLoggedIn()) window.location.href = '/dashboard.html';
+
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('registerBtn');
+      const alertBox = document.getElementById('alert-box');
+
+      const password = document.getElementById('password').value;
+      const confirm = document.getElementById('confirm_password').value;
+
+      if (password !== confirm) {
+        UI.showAlert(alertBox, 'Passwords do not match', 'error');
+        return;
+      }
+
+      UI.setLoading(btn, true);
+
+      try {
+        const data = await API.post('/auth/register', {
+          full_name: document.getElementById('full_name').value.trim(),
+          email: document.getElementById('email').value.trim(),
+          phone: document.getElementById('phone').value.trim() || null,
+          password,
+          role: 'patient',
+        }, false);
+
+        Auth.setSession(data);
+        UI.showAlert(alertBox, 'Account created successfully! Redirecting...', 'success');
+        setTimeout(() => window.location.href = '/dashboard.html', 800);
+      } catch (err) {
+        UI.showAlert(alertBox, err.message, 'error');
+        UI.setLoading(btn, false);
+      }
+    });
+  </script>
+</body>
+</html>

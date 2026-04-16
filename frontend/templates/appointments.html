@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Appointments – MediBook</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="navbar" id="navbar"></nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h1>Appointments</h1>
+      <p id="pageSubtitle">Manage and track your appointments.</p>
+    </div>
+
+    <div id="alertBox"></div>
+
+    <!-- Tab filter -->
+    <div class="tabs">
+      <button class="tab-btn active" data-filter="all" onclick="setFilter('all', this)">All</button>
+      <button class="tab-btn" data-filter="pending" onclick="setFilter('pending', this)">Pending</button>
+      <button class="tab-btn" data-filter="confirmed" onclick="setFilter('confirmed', this)">Confirmed</button>
+      <button class="tab-btn" data-filter="completed" onclick="setFilter('completed', this)">Completed</button>
+      <button class="tab-btn" data-filter="cancelled" onclick="setFilter('cancelled', this)">Cancelled</button>
+    </div>
+
+    <div id="appointmentsList">
+      <div class="loading-overlay"><span class="spinner dark"></span> Loading appointments...</div>
+    </div>
+  </div>
+
+  <!-- Doctor: Update Status Modal -->
+  <div class="modal-overlay" id="statusModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Update Appointment</h2>
+        <button class="modal-close" onclick="UI.closeModal('statusModal')">✕</button>
+      </div>
+      <div id="statusModalAlert"></div>
+      <form id="statusForm">
+        <input type="hidden" id="statusApptId">
+        <div class="form-group">
+          <label>Update Status</label>
+          <select id="newStatus" class="form-control">
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Doctor's Notes <span style="color:var(--gray-500)">(optional)</span></label>
+          <textarea id="doctorNotes" class="form-control" placeholder="Add clinical notes, prescriptions, follow-up instructions..."></textarea>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button type="button" class="btn btn-outline" style="flex:1" onclick="UI.closeModal('statusModal')">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="flex:1" id="statusBtn">Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    Auth.requireAuth('/login.html');
+
+    const role = Auth.getRole();
+    let allAppointments = [];
+    let currentFilter = 'all';
+
+    if (role === 'doctor') {
+      document.getElementById('pageSubtitle').textContent = 'View and manage your patient appointments.';
+    } else if (role === 'admin') {
+      document.getElementById('pageSubtitle').textContent = 'All system appointments.';
+    }
+
+    async function loadAppointments() {
+      try {
+        allAppointments = await API.get('/appointments/');
+        renderAppointments();
+      } catch (err) {
+        document.getElementById('appointmentsList').innerHTML =
+          `<div class="empty-state"><h3>Error loading appointments</h3><p>${err.message}</p></div>`;
+      }
+    }
+
+    function setFilter(filter, btn) {
+      currentFilter = filter;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderAppointments();
+    }
+
+    function renderAppointments() {
+      const filtered = currentFilter === 'all'
+        ? allAppointments
+        : allAppointments.filter(a => a.status === currentFilter);
+
+      const container = document.getElementById('appointmentsList');
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <h3>No ${currentFilter === 'all' ? '' : currentFilter} appointments</h3>
+          <p>${role === 'patient' ? '<a href="/doctor_list.html">Book your first appointment →</a>' : 'Nothing to show here.'}</p>
+        </div>`;
+        return;
+      }
+
+      // Sort by date desc
+      const sorted = [...filtered].sort((a, b) =>
+        (b.appointment_date + b.appointment_time).localeCompare(a.appointment_date + a.appointment_time)
+      );
+
+      container.innerHTML = `<div class="appointments-list">${sorted.map(a => renderCard(a)).join('')}</div>`;
+    }
+
+    function renderCard(a) {
+      const parts = UI.getDateParts(a.appointment_date);
+      const doctorName = a.doctor?.user?.full_name || 'Unknown';
+      const patientName = a.patient?.full_name || 'Unknown';
+      const spec = a.doctor?.specialization || '';
+
+      let infoLine1, infoLine2;
+      if (role === 'patient') {
+        infoLine1 = doctorName;
+        infoLine2 = `${spec} · ${UI.formatTime(a.appointment_time)}`;
+      } else {
+        infoLine1 = patientName;
+        infoLine2 = `Dr. ${doctorName} · ${UI.formatTime(a.appointment_time)}`;
+      }
+
+      let actions = '';
+      if (role === 'patient' && (a.status === 'pending' || a.status === 'confirmed')) {
+        actions = `<button class="btn btn-danger btn-sm" onclick="cancelAppointment(${a.id})">Cancel</button>`;
+      }
+      if ((role === 'doctor' || role === 'admin') && a.status !== 'completed' && a.status !== 'cancelled') {
+        actions = `<button class="btn btn-success btn-sm" onclick="openStatusModal(${a.id}, '${a.status}', '${(a.notes || '').replace(/'/g, "\\'")}')">Update Status</button>`;
+      }
+
+      return `<div class="appointment-card" id="appt-${a.id}">
+        <div class="appt-left">
+          <div class="appt-date-box">
+            <div class="day">${parts.day}</div>
+            <div class="month">${parts.month}</div>
+          </div>
+          <div class="appt-info">
+            <h3>${infoLine1}</h3>
+            <p>${infoLine2}</p>
+            ${a.reason ? `<p style="font-size:0.8rem;color:var(--gray-500)">Reason: ${a.reason}</p>` : ''}
+            ${a.notes ? `<p style="font-size:0.8rem;color:var(--success)">Notes: ${a.notes}</p>` : ''}
+          </div>
+        </div>
+        <div class="appt-right">
+          ${UI.statusBadge(a.status)}
+          ${actions}
+        </div>
+      </div>`;
+    }
+
+    async function cancelAppointment(id) {
+      if (!confirm('Cancel this appointment?')) return;
+      try {
+        await API.delete(`/appointments/${id}`);
+        UI.showAlert(document.getElementById('alertBox'), 'Appointment cancelled.', 'success');
+        loadAppointments();
+      } catch (err) {
+        UI.showAlert(document.getElementById('alertBox'), err.message, 'error');
+      }
+    }
+
+    function openStatusModal(id, currentStatus, notes) {
+      document.getElementById('statusApptId').value = id;
+      document.getElementById('newStatus').value = currentStatus;
+      document.getElementById('doctorNotes').value = notes || '';
+      document.getElementById('statusModalAlert').innerHTML = '';
+      UI.openModal('statusModal');
+    }
+
+    document.getElementById('statusForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('statusBtn');
+      UI.setLoading(btn, true);
+      try {
+        const id = document.getElementById('statusApptId').value;
+        await API.put(`/appointments/${id}/status`, {
+          status: document.getElementById('newStatus').value,
+          notes: document.getElementById('doctorNotes').value.trim() || null,
+        });
+        UI.closeModal('statusModal');
+        UI.showAlert(document.getElementById('alertBox'), 'Appointment status updated.', 'success');
+        loadAppointments();
+      } catch (err) {
+        UI.showAlert(document.getElementById('statusModalAlert'), err.message, 'error');
+        UI.setLoading(btn, false);
+      }
+    });
+
+    document.getElementById('statusModal').addEventListener('click', (e) => {
+      if (e.target.id === 'statusModal') UI.closeModal('statusModal');
+    });
+
+    loadAppointments();
+  </script>
+</body>
+</html>
