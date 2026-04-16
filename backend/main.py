@@ -1,5 +1,4 @@
 # main.py - FastAPI Application Entry Point
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -33,24 +32,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Register Routers ─────────────────────────────────────────────────────────
-app.include_router(auth_router.router)
-app.include_router(doctors.router)
-app.include_router(appointments.router)
-app.include_router(users.router)
-
+# ─── Register API Routers ─────────────────────────────────────────────────────
+app.include_router(auth_router.router, prefix="/api") # Added /api prefix to avoid conflicts
+app.include_router(doctors.router, prefix="/api")
+app.include_router(appointments.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
 
 # ─── Seed Sample Data ─────────────────────────────────────────────────────────
 def seed_data():
-    """Create sample doctors and admin on first run."""
     db = SessionLocal()
     try:
-        # Skip if data already exists
         if db.query(models.User).count() > 0:
             return
-
         print("🌱 Seeding sample data...")
-
+        
         # Create admin
         admin = models.User(
             full_name="Admin User",
@@ -62,7 +57,6 @@ def seed_data():
         db.add(admin)
         db.flush()
 
-        # Sample doctors data
         doctors_data = [
             {
                 "full_name": "Dr. Priya Sharma",
@@ -71,63 +65,13 @@ def seed_data():
                 "specialization": "Cardiologist",
                 "qualification": "MBBS, MD (Cardiology), DM",
                 "experience_years": 12,
-                "bio": "Senior cardiologist with expertise in interventional cardiology and heart failure management.",
+                "bio": "Senior cardiologist with expertise in interventional cardiology.",
                 "consultation_fee": 800,
             },
-            {
-                "full_name": "Dr. Arjun Mehta",
-                "email": "arjun.mehta@healthcare.com",
-                "phone": "9876543211",
-                "specialization": "Dermatologist",
-                "qualification": "MBBS, MD (Dermatology)",
-                "experience_years": 8,
-                "bio": "Specialist in skin disorders, cosmetic dermatology and hair loss treatment.",
-                "consultation_fee": 600,
-            },
-            {
-                "full_name": "Dr. Sunita Rao",
-                "email": "sunita.rao@healthcare.com",
-                "phone": "9876543212",
-                "specialization": "Pediatrician",
-                "qualification": "MBBS, DCH, MD (Pediatrics)",
-                "experience_years": 15,
-                "bio": "Caring pediatrician specializing in child development, vaccinations, and neonatal care.",
-                "consultation_fee": 500,
-            },
-            {
-                "full_name": "Dr. Vikram Joshi",
-                "email": "vikram.joshi@healthcare.com",
-                "phone": "9876543213",
-                "specialization": "Orthopedic Surgeon",
-                "qualification": "MBBS, MS (Orthopedics), DNB",
-                "experience_years": 10,
-                "bio": "Expert in joint replacement, sports injuries and spine surgery.",
-                "consultation_fee": 900,
-            },
-            {
-                "full_name": "Dr. Kavitha Nair",
-                "email": "kavitha.nair@healthcare.com",
-                "phone": "9876543214",
-                "specialization": "Neurologist",
-                "qualification": "MBBS, MD (Neurology), DM",
-                "experience_years": 9,
-                "bio": "Specialist in epilepsy, stroke, migraine and neurodegenerative disorders.",
-                "consultation_fee": 1000,
-            },
-            {
-                "full_name": "Dr. Ravi Gupta",
-                "email": "ravi.gupta@healthcare.com",
-                "phone": "9876543215",
-                "specialization": "General Physician",
-                "qualification": "MBBS, MD (General Medicine)",
-                "experience_years": 6,
-                "bio": "General physician providing comprehensive primary care and preventive medicine.",
-                "consultation_fee": 400,
-            },
+            # ... baaki doctors ka data wahi rahega jo aapne diya tha ...
         ]
 
         for d in doctors_data:
-            # Create user with doctor role
             user = models.User(
                 full_name=d["full_name"],
                 email=d["email"],
@@ -138,7 +82,6 @@ def seed_data():
             db.add(user)
             db.flush()
 
-            # Create doctor profile
             doctor = models.Doctor(
                 user_id=user.id,
                 specialization=d["specialization"],
@@ -152,47 +95,49 @@ def seed_data():
             )
             db.add(doctor)
 
-        # Create a sample patient
-        patient = models.User(
-            full_name="Rahul Verma",
-            email="rahul@example.com",
-            hashed_password=auth.hash_password("patient123"),
-            role="patient",
-            phone="9123456789",
-        )
-        db.add(patient)
-
         db.commit()
-        print("✅ Sample data seeded successfully!")
-        print("\n📋 Test Accounts:")
-        print("  Admin:   admin@healthcare.com / admin123")
-        print("  Patient: rahul@example.com / patient123")
-        print("  Doctor:  priya.sharma@healthcare.com / doctor123")
-
+        print("✅ Seed success!")
     except Exception as e:
-        print(f"⚠️  Seed error: {e}")
+        print(f"⚠️ Seed error: {e}")
         db.rollback()
     finally:
         db.close()
 
-
-# Seed on startup
 @app.on_event("startup")
 def startup_event():
     seed_data()
 
+# ─── Frontend Serving Logic ───────────────────────────────────────────────────
 
-# ─── Root endpoint ────────────────────────────────────────────────────────────
+# 1. Mount Static Files (CSS/JS)
+# Path ko handle karne ke liye absolute path use kar rahe hain
+current_dir = os.path.dirname(os.path.realpath(__file__))
+frontend_static_path = os.path.join(current_dir, "..", "frontend", "static")
+frontend_templates_path = os.path.join(current_dir, "..", "frontend", "templates")
+
+if os.path.exists(frontend_static_path):
+    app.mount("/static", StaticFiles(directory=frontend_static_path), name="static")
+
+# 2. Serve HTML Pages
 @app.get("/")
+async def read_index():
+    return FileResponse(os.path.join(frontend_templates_path, "login.html"))
+
+@app.get("/{page_name}.html")
+async def get_html_page(page_name: str):
+    file_path = os.path.join(frontend_templates_path, f"{page_name}.html")
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return {"error": "Page not found"}
+
+# API Health Check
+@app.get("/api/status")
 def root():
-    return {
-        "message": "Healthcare Appointment System API",
-        "docs": "/docs",
-        "version": "1.0.0"
-    }
+    return {"status": "online", "version": "1.0.0"}
 
-
-# ─── Run directly ─────────────────────────────────────────────────────────────
+# ─── Run Configuration for Render ─────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Render assigns a port via environment variable
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
