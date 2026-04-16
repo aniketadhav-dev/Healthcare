@@ -1,22 +1,20 @@
-# Step 1: Base image
+# Base Python image
 FROM python:3.9-slim
 
-# Step 2: Working directory set karein
+# Set the working directory inside the container
 WORKDIR /app
 
-# Step 3: Dependencies copy aur install karein
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the backend requirements file first (for better caching)
+COPY backend/requirements.txt ./backend/
 
-# Step 4: Pura project code copy karein
+# Install backend dependencies
+RUN pip install --no-cache-dir -r backend/requirements.txt
+
+# Copy the rest of the project files into the container
 COPY . .
 
-# Step 5: Backend directory mein move karein taaki imports sahi kaam karein
-WORKDIR /app/backend
+# Expose the ports for Backend (8000) and Frontend (3000)
+EXPOSE 8000 3000
 
-# Step 6: Environment variable for Port
-ENV PORT=8000
-
-# Step 7: App start karein
-# Hum app.py chala rahe hain jo backend + frontend dono handle karega
-CMD ["python", "main.py"]
+# Run bot.py when the container starts
+CMD ["python", "bot.py"]
